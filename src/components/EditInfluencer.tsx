@@ -171,18 +171,14 @@ const EditInfluencer = ({ influencerId, onBack }: EditInfluencerProps) => {
         if (response.success && response.data) {
           const influencer = response.data;
 
-          // Check if user is invited (hasn't accepted yet)
           setIsInvited(influencer.source === "INVITE" && !influencer.userData);
 
-          // Set active status
           setIsActive(influencer.isActive);
 
-          // Store invite token if available
           if (influencer.token) {
             setInviteToken(influencer.token);
           }
 
-          // Check if revoked
           const hasRevokeInfo = !!(
             influencer.revokeComment &&
             influencer.revokedAt &&

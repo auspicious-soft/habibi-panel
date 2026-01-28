@@ -7,4 +7,5 @@ export const ADMIN_URLS = {
   UPDATE_INFLUENCER:"/admin/update-influencer",
   REGENERATE_INVITE_LINK:"/admin/influencer/regenerate-link",
   GET_ALL_TOKENS:"/admin/token-details",
+  DELETE_INFLUENCER:"/admin/delete-influencer"
 } as const;

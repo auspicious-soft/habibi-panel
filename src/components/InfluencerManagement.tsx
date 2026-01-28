@@ -1,11 +1,14 @@
-import { Edit } from "lucide-react";
+import {  Edit, File, Trash2, Search } from "lucide-react";
 import { Pagination } from "./Pagination";
-import { useState, useEffect } from "react";
-import { getAPI } from "../services/api";
+import { useState, useEffect, useCallback } from "react";
+import { deleteAPI, getAPI } from "../services/api";
 import { ADMIN_URLS } from "../constants/urls";
 import EditInfluencer from "./EditInfluencer";
 import Loader from "./Loader";
 import { AnimatePresence, motion, Variants } from "framer-motion";
+import { toast } from "react-toastify";
+
+type SourceType = "INFLUENCER" | "INVITE";
 
 interface UserData {
   deviceId: string;
@@ -28,6 +31,9 @@ interface InfluencerData extends UserData {
   expiryDate: string;
   userId: string;
   influencerId: string;
+  token: string | null;
+ source: SourceType;
+
 }
 
 interface Influencer {
@@ -45,7 +51,7 @@ interface Influencer {
   revokeComment?: string;
   revokedAt?: string;
   revokedByAdminId?: string;
-  source: string;
+ source: SourceType;
   isInvited: boolean;
   isJoined: boolean;
   userData: {
@@ -106,6 +112,17 @@ const rowVariants: Variants = {
   }),
 };
 
+  const useDebounce = (value: string, delay = 400) => {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+
+  return debounced;
+};
+
 const InfluencerManagement = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [influencerData, setInfluencerData] = useState<InfluencerData[]>([]);
@@ -118,80 +135,80 @@ const InfluencerManagement = () => {
     null,
   );
 
-  const fetchInfluencers = async (page: number) => {
-    try {
-      setLoading(true);
-      setError(null);
+  const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search);
 
-      const response = await getAPI<InfluencerAPIResponse>(
-        ADMIN_URLS.GET_ALL_INFLUENCERS,
-        {
-          page,
-          limit: 10,
-        },
-      );
+const fetchInfluencers = useCallback(
+    async (page: number) => {
+      try {
+        setLoading(true);
 
-      const mappedInfluencers: InfluencerData[] = response.data.influencers.map(
-        (influencer: any) => {
+        const res = await getAPI<InfluencerAPIResponse>(
+          ADMIN_URLS.GET_ALL_INFLUENCERS,
+          {
+            page,
+            limit,
+            search: debouncedSearch || undefined,
+          },
+        );
+
+        const mapped = res.data.influencers.map((inf: any) => {
           let status = "Active";
-          if (!influencer.isActive) {
-            if (
-              influencer.revokeComment &&
-              influencer.revokedAt &&
-              influencer.revokedByAdminId
-            ) {
-              status = "Revoked";
-            } else {
-              status = "Inactive";
-            }
+          if (!inf.isActive) {
+            status =
+              inf.revokeComment && inf.revokedAt ? "Revoked" : "Inactive";
           }
 
           return {
-            influencerId: influencer._id,
-            userId: influencer.userId || influencer._id,
-            deviceId: influencer.userData?.deviceId || "-",
-            name: influencer.name,
-            email: influencer.email,
-            instagram: influencer.instagram,
-            tiktok: influencer.tiktok,
-            accessType: influencer.accessType,
-            startDate: influencer.startDate
-              ? new Date(influencer.startDate).toLocaleDateString()
+            influencerId: inf._id,
+            userId: inf.userId || null,
+            deviceId: inf.userData?.deviceId || "-",
+            name: inf.name,
+            email: inf.email,
+            instagram: inf.instagram,
+            tiktok: inf.tiktok,
+            accessType: inf.accessType,
+            startDate: inf.startDate
+              ? new Date(inf.startDate).toLocaleDateString()
               : "-",
-            expiryDate: influencer.expiryDate
-              ? new Date(influencer.expiryDate).toLocaleDateString()
+            expiryDate: inf.expiryDate
+              ? new Date(inf.expiryDate).toLocaleDateString()
               : "-",
-            subscriptionStatus: influencer.userData?.isSubscribed
+            subscriptionStatus: inf.userData?.isSubscribed
               ? "Subscribed"
               : "Not Subscribed",
-            preferredTone: influencer.userData?.rizzType || "-",
-            preferredDialect: influencer.userData?.dialect || "-",
-            preferredLanguage: influencer.userData?.language || "-",
-            preferredGender: influencer.userData?.gender || "-",
-            genZ: influencer.userData?.isGenz ? "Yes" : "No",
-            status: status,
+            preferredTone: inf.userData?.rizzType || "-",
+            preferredDialect: inf.userData?.dialect || "-",
+            preferredLanguage: inf.userData?.language || "-",
+            preferredGender: inf.userData?.gender || "-",
+            genZ: inf.userData?.isGenz ? "Yes" : "No",
+            status,
+            token: inf.token || null,
+            source: inf.source,
           };
-        },
-      );
+        });
 
-      setInfluencerData(mappedInfluencers);
-      setTotalPages(response.data.pagination.totalPages);
-      setTotalCount(response.data.pagination.total);
-      setLimit(response.data.pagination.limit);
-      setCurrentPage(response.data.pagination.page);
-    } catch (err) {
-      console.error("Error fetching influencers:", err);
-      setError("Failed to load influencers. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
+        setInfluencerData(mapped);
+        setCurrentPage(res.data.pagination.page);
+        setTotalPages(res.data.pagination.totalPages);
+        setTotalCount(res.data.pagination.total);
+      } catch (e) {
+        toast.error("Failed to load influencers");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [debouncedSearch, limit],
+  );
 
   useEffect(() => {
-    if (!editingInfluencerId) {
-      fetchInfluencers(currentPage);
-    }
-  }, [currentPage, editingInfluencerId]);
+    if (!editingInfluencerId) fetchInfluencers(currentPage);
+  }, [currentPage, editingInfluencerId, fetchInfluencers]);
+
+  useEffect(() => {
+    // Reset to page 1 when search changes
+    setCurrentPage(1);
+  }, [debouncedSearch]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -218,6 +235,27 @@ const InfluencerManagement = () => {
     );
   }
 
+    const copyToClipboard = (inviteToken:any) => {
+      const inviteLink = `habibiRizz://onboard/influencer?token=${inviteToken}`;
+      navigator.clipboard.writeText(inviteLink);
+      toast.success("Invite link copied!");
+    };
+
+   const handleDelete = async (id: string, source: SourceType) => {
+   
+
+    try {
+      await deleteAPI(
+        `${ADMIN_URLS.DELETE_INFLUENCER}?id=${id}&source=${source}`
+      );
+      toast.success("Deleted successfully");
+      fetchInfluencers(currentPage);
+    } catch {
+      toast.error("Delete failed");
+    }
+  };
+
+
   return (
     <>
       <div className="w-full mx-auto px-4">
@@ -227,11 +265,28 @@ const InfluencerManagement = () => {
           animate="visible"
           className="rounded-md"
         >
+          {/* Search Bar */}
+          <div className="mb-4">
+            <div className="relative max-w-xs">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name..."
+                className="block w-full pl-10 pr-3 py-2.5 border border-gray-600 rounded-lg bg-gray-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+              />
+            </div>
+          </div>
+
           {/* Scrollable Table View */}
           <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-x-auto">
             {/* Table Header */}
-            <div className="grid grid-cols-[100px_160px_120px_130px_160px_140px_80px_80px_1fr] gap-3 px-5 py-3 bg-gray-700 rounded-t-lg min-w-[1070px]">
+            <div className="grid grid-cols-[120px_180px_160px_120px_130px_160px_140px_80px_120px_1fr] gap-1 px-5 py-3 bg-gray-700 rounded-t-lg min-w-[1430px]">
               <div className="text-white text-sm font-semibold">Device ID</div>
+                <div className="text-white text-sm font-semibold">Name</div>
               <div className="text-white text-sm font-semibold">
                 Subscription Status
               </div>
@@ -255,7 +310,7 @@ const InfluencerManagement = () => {
             </div>
 
             {/* Table Body */}
-            <div className="min-w-[1070px]">
+            <div className="min-w-[1430px]">
               {loading ? (
                 <div className="px-5 py-10 text-center text-gray-400">
                   Loading influencers...
@@ -278,14 +333,17 @@ const InfluencerManagement = () => {
                       initial="hidden"
                       animate="visible"
                       exit={{ opacity: 0, x: 20 }}
-                      className={`grid grid-cols-[100px_160px_120px_130px_160px_140px_80px_80px_1fr] gap-3 px-5 py-3 items-center ${
+                      className={`grid grid-cols-[120px_180px_160px_120px_130px_160px_140px_80px_120px_1fr] gap-1 px-5 py-3 items-center ${
                         index !== influencerData.length - 1
                           ? "border-b border-gray-100/5"
                           : ""
-                      }`}
+                      }`} 
                     >
                       <div className="text-gray-100 text-sm truncate">
-                        {influencer.deviceId}
+                        {influencer.deviceId.slice(0,10)}
+                      </div>
+                       <div className="text-gray-100 text-sm">
+                        {influencer.name}
                       </div>
                       <div className="text-gray-100 text-sm">
                         {influencer.subscriptionStatus}
@@ -308,7 +366,7 @@ const InfluencerManagement = () => {
                       <div className="text-gray-100 text-sm">
                         {influencer.status}
                       </div>
-                      <div className="flex justify-center pr-4">
+                      <div className="flex justify-center gap-2 pr-4">
                         <motion.button
                           whileHover={{ scale: 1.05 }}
                           whileTap={{ scale: 0.95 }}
@@ -316,6 +374,26 @@ const InfluencerManagement = () => {
                           className="p-2.5 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
                         >
                           <Edit className="w-4 h-4 text-white" />
+                        </motion.button>
+                         <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() =>
+                        handleDelete(influencer.influencerId, influencer.source)
+                      }
+                          className="p-2.5 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4 text-white" />
+                        </motion.button>
+
+                          <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => copyToClipboard(influencer.token)}
+                          className={`p-2.5 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors ${influencer.source === "INFLUENCER" ? "cursor-not-allowed" : "" } `}
+                          disabled={influencer.source === "INFLUENCER"}
+                        >
+                          <File className="w-4 h-4 text-white" />
                         </motion.button>
                       </div>
                     </motion.div>
